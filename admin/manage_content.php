@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("admin");
 include("../includes/db.php");
@@ -20,6 +21,7 @@ $message = "";
 $message_type = "success";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
     $values = array();
     foreach ($fields as $key => $label) {
         $values[$key] = trim($_POST[$key] ?? "");
@@ -86,6 +88,7 @@ while ($row = $result->fetch_assoc()) {
                     </div>
                     <?php if ($message !== ""): ?><div class="alert alert-<?php echo $message_type; ?>" role="status"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
                     <form method="POST" class="row g-3">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                         <?php foreach ($fields as $key => $label): ?>
                             <?php $is_long = strpos($key, 'description') !== false; ?>
                             <div class="col-12">

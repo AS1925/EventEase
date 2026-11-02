@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("user");
 include("../includes/db.php");
@@ -11,6 +12,10 @@ $statement->execute();
 $user = $statement->get_result()->fetch_assoc();
 
 $msg = "";
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 
 if(isset($_POST['update']))
 {
@@ -74,6 +79,7 @@ if(isset($_POST['update']))
                         <div class="avatar-circle"><i class="fa-solid fa-user"></i></div>
                     </div>
                     <form method="POST" class="row g-3">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                         <div class="col-md-6">
                             <label class="form-label">Name</label>
                             <input type="text" name="name" class="form-control" value="<?php echo htmlspecialchars($user['name']); ?>" required>

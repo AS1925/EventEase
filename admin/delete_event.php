@@ -1,8 +1,16 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
-require_role("admin");
+require_role("admin", "organizer");
 include("../includes/db.php");
+$role = eventease_current_role();
+$is_admin = $role === 'admin';
+$user_id = (int)$_SESSION['user_id'];
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id']) || !ctype_digit($_POST['id'])) {
     header("Location: view_events.php");
@@ -10,8 +18,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !isset($_POST['id']) || !ctype_digi
 }
 
 $id = (int)$_POST['id'];
-$image_query = $conn->prepare("SELECT image FROM events WHERE id = ?");
-$image_query->bind_param("i", $id);
+if ($is_admin) {
+    $image_query = $conn->prepare("SELECT image FROM events WHERE id = ?");
+    $image_query->bind_param("i", $id);
+} else {
+    $image_query = $conn->prepare("SELECT image FROM events WHERE id = ? AND organizer_id = ?");
+    $image_query->bind_param("ii", $id, $user_id);
+}
 $image_query->execute();
 $event = $image_query->get_result()->fetch_assoc();
 
@@ -25,8 +38,13 @@ if ($event) {
     $delete_reviews->bind_param("i", $id);
     $reviews_deleted = $delete_reviews->execute();
 
-    $delete_event = $conn->prepare("DELETE FROM events WHERE id = ?");
-    $delete_event->bind_param("i", $id);
+    if ($is_admin) {
+        $delete_event = $conn->prepare("DELETE FROM events WHERE id = ?");
+        $delete_event->bind_param("i", $id);
+    } else {
+        $delete_event = $conn->prepare("DELETE FROM events WHERE id = ? AND organizer_id = ?");
+        $delete_event->bind_param("ii", $id, $user_id);
+    }
     if ($registrations_deleted && $reviews_deleted && $delete_event->execute()) {
         $conn->commit();
         if ($event['image'] !== "" && is_file("../events/" . $event['image'])) {

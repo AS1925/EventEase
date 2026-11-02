@@ -1,10 +1,14 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("admin");
 include("../includes/db.php");
 
 $statuses = array("Pending", "Published", "Rejected");
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['review_id'], $_POST['status']) && is_string($_POST['review_id']) && ctype_digit($_POST['review_id']) && in_array($_POST['status'], $statuses, true)) {
     $review_id = (int)$_POST['review_id'];
     $status = $_POST['status'];
@@ -60,6 +64,7 @@ $reviews = $conn->query("SELECT event_reviews.id, event_reviews.rating, event_re
                                     <p class="text-warning mb-2" aria-label="<?php echo (int)$review['rating']; ?> out of 5 stars"><?php echo str_repeat('★', (int)$review['rating']); ?><?php echo str_repeat('☆', 5 - (int)$review['rating']); ?></p>
                                     <p class="mb-3"><?php echo nl2br(htmlspecialchars($review['review_text'])); ?></p>
                                     <form method="POST" class="d-flex flex-wrap gap-2 align-items-center">
+                                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                                         <input type="hidden" name="review_id" value="<?php echo (int)$review['id']; ?>">
                                         <label class="visually-hidden" for="review-status-<?php echo (int)$review['id']; ?>">Review status</label>
                                         <select id="review-status-<?php echo (int)$review['id']; ?>" name="status" class="form-select form-select-sm w-auto">

@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("admin");
 include("../includes/db.php");
@@ -11,6 +12,9 @@ if (!isset($_GET['id']) || !ctype_digit($_GET['id'])) {
 
 $id = (int)$_GET['id'];
 $statuses = array("Pending", "Approved", "Completed", "Rejected");
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 if (isset($_POST['update']) && isset($_POST['status']) && in_array($_POST['status'], $statuses, true)) {
     $status = $_POST['status'];
     $update = $conn->prepare("UPDATE service_requests SET status = ? WHERE id = ?");
@@ -53,6 +57,7 @@ if (!$row) {
                     <h1 class="h3 fw-bold mb-2">Update Request Status</h1>
                     <p class="text-muted mb-4">Change the status for this service request.</p>
                     <form method="POST">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                         <div class="mb-3">
                             <label class="form-label" for="status">Status</label>
                             <select id="status" name="status" class="form-select" required>

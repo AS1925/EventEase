@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once("includes/access_control.php");
+eventease_start_session();
 include("includes/db.php");
 
 $contact_message = "";
@@ -9,6 +10,7 @@ $contact_subject = "";
 $contact_body = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
     $contact_name = trim($_POST['name'] ?? "");
     $contact_email = trim($_POST['email'] ?? "");
     $contact_subject = trim($_POST['subject'] ?? "");
@@ -60,6 +62,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="card border-0 shadow-sm rounded-4 p-4 p-lg-5">
                         <h3 class="fw-bold mb-3">Send a message</h3>
                         <form method="POST">
+                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                             <?php if ($contact_message !== ""): ?><div class="alert <?php echo strpos($contact_message, 'could not') === false && strpos($contact_message, 'Please complete') === false ? 'alert-success' : 'alert-danger'; ?>" role="alert"><?php echo htmlspecialchars($contact_message); ?></div><?php endif; ?>
                             <div class="row g-3">
                                 <div class="col-md-6">

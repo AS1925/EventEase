@@ -1,39 +1,22 @@
 <?php
-session_start();
+require_once("includes/access_control.php");
+eventease_start_session();
 include("includes/db.php");
+$current_role = eventease_current_role();
 
 /* Upcoming Events */
-$query = mysqli_query($conn, "
-SELECT *
-FROM events
-WHERE event_date >= CURDATE()
-ORDER BY event_date ASC
-LIMIT 3
-");
-$registration_count_statement = $conn->prepare("SELECT COUNT(*) AS total FROM registrations WHERE event_id = ?");
+$query = $conn->query("SELECT * FROM events WHERE publish_status = 'published' AND event_date >= CURDATE() ORDER BY event_date ASC LIMIT 3");
+$registration_count_statement = $conn->prepare(
+    "SELECT COUNT(*) AS total
+     FROM registrations
+     WHERE event_id = ? AND registration_status = 'active'"
+);
 
 /* Statistics */
+$total_events = $conn->query("SELECT COUNT(*) AS total FROM events WHERE publish_status = 'published'")->fetch_assoc();
+$total_users = $conn->query("SELECT COUNT(*) AS total FROM users")->fetch_assoc();
+$total_registrations = $conn->query("SELECT COUNT(*) AS total FROM registrations")->fetch_assoc();
 
-$total_events = mysqli_fetch_assoc(
-    mysqli_query($conn, "
-SELECT COUNT(*) AS total
-FROM events
-")
-);
-
-$total_users = mysqli_fetch_assoc(
-    mysqli_query($conn, "
-SELECT COUNT(*) AS total
-FROM users
-")
-);
-
-$total_registrations = mysqli_fetch_assoc(
-    mysqli_query($conn, "
-SELECT COUNT(*) AS total
-FROM registrations
-")
-);
 $site_content = array();
 $content_result = $conn->query("SELECT content_key, content_value FROM page_content");
 while ($content_row = $content_result->fetch_assoc()) {
@@ -506,12 +489,14 @@ events organized by EventEase.
     <p class="text-muted mb-3">There are no upcoming events available right now.</p>
     <a href="events.php" class="btn btn-outline-primary">Browse Events</a>
 </div>
-<?php else: while ($row = mysqli_fetch_assoc($query)):
+<?php else: while ($row = $query->fetch_assoc()):
 $event_id = (int)$row['id'];
 $registration_count_statement->bind_param("i", $event_id);
 $registration_count_statement->execute();
 $registered = $registration_count_statement->get_result()->fetch_assoc();
 $available = max(0, (int)$row['max_participants'] - (int)$registered['total']);
+$registration_is_open = (!$row['registration_open_at'] || $row['registration_open_at'] <= date('Y-m-d H:i:s'))
+    && (!$row['registration_close_at'] || $row['registration_close_at'] >= date('Y-m-d H:i:s'));
 ?>
 
 <div class="col-lg-4 mb-4">
@@ -528,7 +513,7 @@ $available = max(0, (int)$row['max_participants'] - (int)$registered['total']);
 
 <span class="badge bg-warning">
 
-<?php echo htmlspecialchars($row['event_type']); ?>
+<?php echo htmlspecialchars($row['category'] ?: $row['event_type']); ?>
 
 </span>
 
@@ -553,6 +538,8 @@ $available = max(0, (int)$row['max_participants'] - (int)$registered['total']);
 <i class="fas fa-calendar"></i>
 
 <?php echo htmlspecialchars($row['event_date']); ?>
+ · <?php echo htmlspecialchars(substr($row['start_time'] ?: $row['event_time'], 0, 5)); ?>
+<?php if (!empty($row['end_time'])): ?>–<?php echo htmlspecialchars(substr($row['end_time'], 0, 5)); ?><?php endif; ?>
 
 </p>
 
@@ -561,6 +548,7 @@ $available = max(0, (int)$row['max_participants'] - (int)$registered['total']);
 <i class="fas fa-location-dot"></i>
 
 <?php echo htmlspecialchars($row['venue']); ?>
+<?php if (!empty($row['address'])): ?>, <?php echo htmlspecialchars($row['address']); ?><?php endif; ?>
 
 </p>
 
@@ -576,10 +564,22 @@ Seats Left:
 
 </div>
 
-<?php if (isset($_SESSION['role']) && $_SESSION['role'] === 'user'): ?>
+<div class="d-flex gap-2 mb-2">
+<a href="event.php?id=<?php echo $event_id; ?>" class="btn btn-outline-primary w-100">Event details</a>
+<button type="button" class="btn btn-outline-secondary" data-share-event data-share-url="event.php?id=<?php echo $event_id; ?>" data-share-title="<?php echo htmlspecialchars($row['event_name'], ENT_QUOTES, 'UTF-8'); ?>" data-share-text="<?php echo htmlspecialchars(trim(strip_tags((string)$row['description'])), ENT_QUOTES, 'UTF-8'); ?>" data-share-label="Share">
+<i class="fa-solid fa-share-nodes" aria-hidden="true"></i><span class="visually-hidden">Share event</span>
+</button>
+</div>
+<?php if ($current_role === 'customer' && $registration_is_open && $available > 0): ?>
 <a href="register_event.php?id=<?php echo $event_id; ?>" class="btn btn-warning w-100">Register Now</a>
-<?php elseif (isset($_SESSION['role']) && $_SESSION['role'] === 'admin'): ?>
+<?php elseif ($current_role === 'customer'): ?>
+<span class="badge bg-secondary-subtle text-secondary"><?php echo $available > 0 ? 'Registration is closed' : 'Event Full'; ?></span>
+<?php elseif ($current_role === 'admin'): ?>
 <a href="admin/dashboard.php" class="btn btn-outline-primary w-100">Admin Dashboard</a>
+<?php elseif ($current_role === 'organizer'): ?>
+<a href="organizer/dashboard.php" class="btn btn-outline-primary w-100">Organizer Dashboard</a>
+<?php elseif ($current_role === 'vendor'): ?>
+<a href="vendor/dashboard.php" class="btn btn-outline-primary w-100">Vendor Account</a>
 <?php else: ?>
 <a href="login.php" class="btn btn-primary w-100">Login to Register</a>
 <?php endif; ?>

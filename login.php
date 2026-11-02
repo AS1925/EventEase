@@ -1,26 +1,38 @@
-<?php session_start(); 
+<?php
+require_once("includes/access_control.php");
+eventease_start_session();
 include("includes/db.php");
 $message="";
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 if(isset($_POST['login']))
     {
         $email=trim($_POST['email']);
         $password=$_POST['password'];
-        $query=$conn->prepare("SELECT id, name, role, password FROM users WHERE email = ? LIMIT 1");
+        $query=$conn->prepare("SELECT id, name, email, password, role FROM users WHERE email = ? LIMIT 1");
         $query->bind_param("s", $email);
         $query->execute();
         $user=$query->get_result()->fetch_assoc();
         if($user){
             if(password_verify($password,$user['password']))
                 {
+                    session_regenerate_id(true);
                     $_SESSION['user_id']=$user['id'];
                     $_SESSION['user_name']=$user['name'];
-                    $_SESSION['role']=$user['role'];
-                   if($user['role']=='admin')
-                    {
-                        header("Location:admin/dashboard.php");
+                    $_SESSION['user_email']=strtolower($user['email']);
+                    $_SESSION['role'] = $user['role'] === 'user' ? 'customer' : $user['role'];
+                    if (!in_array($_SESSION['role'], array('customer', 'organizer', 'vendor', 'admin'), true)) {
+                        $_SESSION['role'] = $_SESSION['user_email'] === EVENTEASE_ADMIN_EMAIL ? 'admin' : 'customer';
                     }
-                    else{
-                        header("Location:user/dashboard.php");
+                    if ($_SESSION['role'] === 'admin') {
+                        header("Location: admin/dashboard.php");
+                    } elseif ($_SESSION['role'] === 'organizer') {
+                        header("Location: organizer/dashboard.php");
+                    } elseif ($_SESSION['role'] === 'vendor') {
+                        header("Location: vendor/dashboard.php");
+                    } else {
+                        header("Location: user/dashboard.php");
                     }
                     exit();
                 }
@@ -48,23 +60,23 @@ if(isset($_POST['login']))
     </head>
     <body class="auth-page">
         <?php include 'includes/navbar.php'; ?>
-        <div>
-            <div class="container py-5">
-                <div class="row auth-card shadow-lg overflow-hidden">
-                    <div class="col-lg-6 d-none d-lg-flex auth-illustration align-items-center justify-content-center p-5">
-                        <div class="text-center text-white">
-                            <div class="icon-badge mb-4"><i class="fa-solid fa-calendar-check"></i></div>
-                            <h2 class="fw-bold mb-3">Welcome Back</h2>
-                            <p class="mb-0">Sign in to manage events, registrations, and service requests with ease.</p>
-                        </div>
+        <main class="container auth-content py-5">
+            <div class="row auth-card login-auth-card shadow-lg overflow-hidden">
+                <div class="col-lg-6 d-none d-lg-flex auth-illustration align-items-center justify-content-center p-5">
+                    <div class="text-center text-white">
+                        <div class="icon-badge mb-4"><i class="fa-solid fa-calendar-check"></i></div>
+                        <h2 class="fw-bold mb-3">Welcome Back</h2>
+                        <p class="mb-0">Sign in to manage events, registrations, and service requests with ease.</p>
                     </div>
-                    <div class="col-lg-6 p-4 p-lg-5 bg-white">
-                        <div class="text-center mb-4">
+                </div>
+                <div class="col-lg-6 p-4 p-lg-5 bg-white">
+                    <div class="text-center mb-4">
                         <div class="brand-pill mb-3"><i class="fa-solid fa-bolt"></i> EventEase</div>
                         <h3 class="fw-bold mb-2">Login to your account</h3>
                         <p class="text-muted">Access your dashboard securely</p>
                     </div>
                     <form method="POST" class="auth-form">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                         <div class="mb-3">
                             <label class="form-label">Email Address</label>
                             <div class="input-group">
@@ -93,7 +105,7 @@ if(isset($_POST['login']))
                     </div>
                 </div>
             </div>
-        </div>
+        </main>
         <?php include 'includes/footer.php'; ?>
     </body>
 </html>

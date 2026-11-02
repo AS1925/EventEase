@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("user");
 include("../includes/db.php");
@@ -11,7 +12,24 @@ if (!isset($_GET['id']) || !is_string($_GET['id']) || !ctype_digit($_GET['id']))
 
 $event_id = (int)$_GET['id'];
 $user_id = (int)$_SESSION['user_id'];
-$event_statement = $conn->prepare("SELECT events.id, events.event_name, events.event_date FROM events INNER JOIN registrations ON registrations.event_id = events.id WHERE events.id = ? AND registrations.user_id = ? AND registrations.status = 'Attended' AND events.event_date < CURDATE() LIMIT 1");
+$event_statement = $conn->prepare(
+    "SELECT events.id, events.event_name, events.event_date
+     FROM events
+     WHERE events.id = ? AND events.event_date < CURDATE()
+       AND EXISTS (
+           SELECT 1 FROM registrations
+           WHERE registrations.event_id = events.id AND registrations.user_id = ?
+             AND registrations.registration_status = 'active'
+             AND (
+                 events.attendance_enabled = 0
+                 OR EXISTS (
+                     SELECT 1 FROM event_attendance
+                     WHERE event_attendance.registration_id = registrations.id
+                 )
+             )
+       )
+     LIMIT 1"
+);
 $event_statement->bind_param("ii", $event_id, $user_id);
 $event_statement->execute();
 $event = $event_statement->get_result()->fetch_assoc();
@@ -30,6 +48,7 @@ $rating = $review ? (int)$review['rating'] : 5;
 $review_text = $review ? $review['review_text'] : "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
     $rating = (int)($_POST['rating'] ?? 0);
     $review_text = trim($_POST['review_text'] ?? "");
     if ($rating < 1 || $rating > 5 || $review_text === "") {
@@ -70,6 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <?php if ($message !== ""): ?><div class="alert alert-<?php echo $message_type; ?>" role="status"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
                     <?php if ($review && $message === ""): ?><p class="text-muted">Current review status: <?php echo htmlspecialchars($review['status']); ?></p><?php endif; ?>
                     <form method="POST" class="row g-3">
+                        <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                         <div class="col-md-5">
                             <label class="form-label" for="rating">Rating</label>
                             <select id="rating" name="rating" class="form-select" required>

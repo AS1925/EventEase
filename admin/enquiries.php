@@ -1,8 +1,13 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("admin");
 include("../includes/db.php");
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    eventease_require_valid_csrf_post();
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id']) && is_string($_POST['delete_id']) && ctype_digit($_POST['delete_id'])) {
     $message_id = (int)$_POST['delete_id'];
@@ -63,6 +68,7 @@ $messages = $conn->query("SELECT id, name, email, subject, message, submitted_at
                                     <div class="d-flex flex-wrap gap-2">
                                         <a class="btn btn-sm btn-outline-primary" href="mailto:<?php echo rawurlencode($message['email']); ?>?subject=<?php echo $reply_subject; ?>"><i class="fa-solid fa-reply me-1"></i>Reply</a>
                                         <form method="POST" class="m-0" onsubmit="return confirm('Remove this enquiry?')">
+                                            <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(eventease_csrf_token()); ?>">
                                             <input type="hidden" name="delete_id" value="<?php echo (int)$message['id']; ?>">
                                             <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fa-solid fa-trash me-1"></i>Remove</button>
                                         </form>

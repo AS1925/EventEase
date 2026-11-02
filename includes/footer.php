@@ -1,7 +1,12 @@
-</main>
+</div>
 <?php
 if (!isset($base_path)) {
-    $base_path = (strpos($_SERVER['PHP_SELF'], '/admin/') !== false || strpos($_SERVER['PHP_SELF'], '/user/') !== false) ? '../' : '';
+    $base_path = (
+        strpos($_SERVER['PHP_SELF'], '/admin/') !== false
+        || strpos($_SERVER['PHP_SELF'], '/user/') !== false
+        || strpos($_SERVER['PHP_SELF'], '/organizer/') !== false
+        || strpos($_SERVER['PHP_SELF'], '/vendor/') !== false
+    ) ? '../' : '';
 }
 ?>
 <footer class="site-footer">

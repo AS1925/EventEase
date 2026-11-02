@@ -1,20 +1,56 @@
 <?php
-session_start();
+require_once __DIR__ . '/../includes/session.php';
+eventease_start_session();
 include("../includes/access_control.php");
 require_role("admin");
 include("../includes/db.php");
 
 $users = (int)$conn->query("SELECT COUNT(*) AS total FROM users")->fetch_assoc()['total'];
-$registrations = (int)$conn->query("SELECT COUNT(*) AS total FROM registrations")->fetch_assoc()['total'];
+$registrations = (int)$conn->query("SELECT COUNT(*) AS total FROM registrations WHERE registration_status = 'active'")->fetch_assoc()['total'];
 $requests = (int)$conn->query("SELECT COUNT(*) AS total FROM service_requests")->fetch_assoc()['total'];
-$events_result = $conn->query("SELECT events.id, events.event_name, events.event_type, events.event_date, events.event_time, events.venue, events.max_participants, CASE WHEN events.event_date < CURDATE() THEN 'Completed' WHEN events.event_date = CURDATE() THEN 'Ongoing' ELSE 'Upcoming' END AS event_status, COUNT(DISTINCT CASE WHEN registrations.status <> 'Cancelled' THEN registrations.id END) AS registered_count, COUNT(DISTINCT CASE WHEN registrations.status = 'Attended' THEN registrations.id END) AS attended_count, COUNT(DISTINCT event_reviews.id) AS review_count, ROUND(AVG(event_reviews.rating), 1) AS average_rating FROM events LEFT JOIN registrations ON registrations.event_id = events.id LEFT JOIN event_reviews ON event_reviews.event_id = events.id AND event_reviews.status = 'Published' GROUP BY events.id ORDER BY events.event_date DESC, events.event_time DESC");
+$events_result = $conn->query(
+    "SELECT events.id, events.event_name, events.event_type, events.event_date,
+            events.event_time, events.venue, events.max_participants,
+            CASE WHEN events.event_date < CURDATE() THEN 'Completed'
+                 WHEN events.event_date = CURDATE() THEN 'Ongoing'
+                 ELSE 'Upcoming' END AS event_status,
+            COALESCE(registration_totals.registered_count, 0) AS registered_count,
+            COALESCE(registration_totals.attended_count, 0) AS attended_count,
+            COALESCE(review_totals.review_count, 0) AS review_count,
+            review_totals.average_rating
+     FROM events
+     LEFT JOIN (
+         SELECT registrations.event_id,
+                COUNT(*) AS registered_count,
+                COUNT(event_attendance.registration_id) AS attended_count
+         FROM registrations
+         LEFT JOIN event_attendance ON event_attendance.registration_id = registrations.id
+         WHERE registrations.registration_status = 'active'
+         GROUP BY registrations.event_id
+     ) AS registration_totals ON registration_totals.event_id = events.id
+     LEFT JOIN (
+         SELECT event_id, COUNT(*) AS review_count, ROUND(AVG(rating), 1) AS average_rating
+         FROM event_reviews
+         WHERE status = 'Published'
+         GROUP BY event_id
+     ) AS review_totals ON review_totals.event_id = events.id
+     ORDER BY events.event_date DESC, events.event_time DESC"
+);
 $event_rows = array();
 $lifecycle_totals = array('Upcoming' => 0, 'Ongoing' => 0, 'Completed' => 0);
 while ($event = $events_result->fetch_assoc()) {
     $event_rows[] = $event;
     $lifecycle_totals[$event['event_status']]++;
 }
-$attendees = $conn->query("SELECT events.event_name, events.event_date, registrations.status, users.name, users.email FROM registrations INNER JOIN events ON events.id = registrations.event_id INNER JOIN users ON users.id = registrations.user_id ORDER BY events.event_date DESC, events.event_time DESC, users.name");
+$attendees = $conn->query(
+    "SELECT registrations.registration_number, registrations.attendance_status,
+            events.event_name, events.event_date, users.name, users.email
+     FROM registrations
+     INNER JOIN events ON events.id = registrations.event_id
+     INNER JOIN users ON users.id = registrations.user_id
+     WHERE registrations.registration_status = 'active'
+     ORDER BY events.event_date DESC, events.event_time DESC, users.name"
+);
 $published_reviews = $conn->query("SELECT events.event_name, event_reviews.rating, event_reviews.review_text, event_reviews.created_at, users.name FROM event_reviews INNER JOIN events ON events.id = event_reviews.event_id INNER JOIN users ON users.id = event_reviews.user_id WHERE event_reviews.status = 'Published' ORDER BY event_reviews.created_at DESC");
 ?>
 <!DOCTYPE html>
@@ -52,10 +88,10 @@ $published_reviews = $conn->query("SELECT events.event_name, event_reviews.ratin
                     </div>
                     <section class="card border-0 shadow-sm rounded-4 p-4 mb-4 report-section">
                         <h2 class="h5 fw-bold mb-1">Event Performance</h2>
-                        <p class="text-muted small">Includes registration counts, attendance marked by admins, and published reviews.</p>
+                        <p class="text-muted small">Counts active registrations, saved check-ins, and published reviews from the database.</p>
                         <div class="table-responsive">
                             <table class="table modern-table align-middle">
-                                <thead><tr><th>Event</th><th>Schedule</th><th>Status</th><th>Registered</th><th>Participated</th><th>Reviews</th><th>Avg. Rating</th></tr></thead>
+                                <thead><tr><th>Event</th><th>Schedule</th><th>Status</th><th>Registered</th><th>Checked in</th><th>Published reviews</th><th>Avg. Rating</th></tr></thead>
                                 <tbody>
                                     <?php if (count($event_rows) === 0): ?><tr><td colspan="7" class="text-center text-muted py-4">No events to report.</td></tr><?php endif; ?>
                                     <?php foreach ($event_rows as $event): ?>
@@ -74,14 +110,14 @@ $published_reviews = $conn->query("SELECT events.event_name, event_reviews.ratin
                         </div>
                     </section>
                     <section class="card border-0 shadow-sm rounded-4 p-4 mb-4 report-section">
-                        <h2 class="h5 fw-bold mb-3">Registered Participants</h2>
+                        <h2 class="h5 fw-bold mb-3">Active Registered Participants</h2>
                         <div class="table-responsive">
                             <table class="table modern-table align-middle">
-                                <thead><tr><th>Participant</th><th>Email</th><th>Event</th><th>Date</th><th>Attendance</th></tr></thead>
+                                <thead><tr><th>Participant</th><th>Email</th><th>Registration No.</th><th>Event</th><th>Date</th><th>Attendance</th></tr></thead>
                                 <tbody>
-                                    <?php if ($attendees->num_rows === 0): ?><tr><td colspan="5" class="text-center text-muted py-4">No registrations yet.</td></tr><?php endif; ?>
+                                    <?php if ($attendees->num_rows === 0): ?><tr><td colspan="6" class="text-center text-muted py-4">No active registrations yet.</td></tr><?php endif; ?>
                                     <?php while ($attendee = $attendees->fetch_assoc()): ?>
-                                        <tr><td><?php echo htmlspecialchars($attendee['name']); ?></td><td><?php echo htmlspecialchars($attendee['email']); ?></td><td><?php echo htmlspecialchars($attendee['event_name']); ?></td><td><?php echo htmlspecialchars($attendee['event_date']); ?></td><td><?php echo htmlspecialchars($attendee['status']); ?></td></tr>
+                                        <tr><td><?php echo htmlspecialchars($attendee['name']); ?></td><td><?php echo htmlspecialchars($attendee['email']); ?></td><td class="font-monospace"><?php echo htmlspecialchars($attendee['registration_number']); ?></td><td><?php echo htmlspecialchars($attendee['event_name']); ?></td><td><?php echo htmlspecialchars($attendee['event_date']); ?></td><td><?php echo htmlspecialchars(ucwords(str_replace('_', ' ', $attendee['attendance_status']))); ?></td></tr>
                                     <?php endwhile; ?>
                                 </tbody>
                             </table>

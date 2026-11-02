@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/session.php';
+eventease_start_session();
 include("includes/db.php");
 $about_content = array();
 $about_result = $conn->query("SELECT content_key, content_value FROM page_content WHERE content_key IN ('about_title', 'about_description')");
